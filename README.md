@@ -1,1 +1,1 @@
-# st_demo3
+# Sector Fundamentals App
