@@ -10,7 +10,9 @@ from streamlit_autorefresh import st_autorefresh
 
 #config page
 st.set_page_config(page_title='Sector Fundamentals Dashboard', layout="centered")
-refresh = st_autorefresh(limit=1)
+
+#refresh max once per day
+refresh = st_autorefresh(interval=86400, limit=1)
 
 
 #provide dex sector subgraph links
