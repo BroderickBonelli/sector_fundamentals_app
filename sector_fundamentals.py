@@ -6,10 +6,11 @@ from datetime import datetime
 import seaborn as sns
 import streamlit as st
 import plotly.express as px
-
+from streamlit_autorefresh import st_autorefresh
 
 #config page
 st.set_page_config(page_title='Sector Fundamentals Dashboard', layout="centered")
+refresh = st_autorefresh(limit=1)
 
 
 #provide dex sector subgraph links
