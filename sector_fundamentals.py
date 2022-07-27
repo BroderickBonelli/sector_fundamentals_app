@@ -176,7 +176,7 @@ dex_subgraphs = {
     'honeyswap-gnosis':'https://api.thegraph.com/subgraphs/name/messari/honeyswap-gnosis',
     'platypus-finance-avalanche':'https://api.thegraph.com/subgraphs/name/messari/platypus-finance-avalanche',
     'solarbeam-moonriver':'https://api.thegraph.com/subgraphs/name/messari/solarbeam-moonriver',
-    'ubeswap-celo':'https://api.thegraph.com/subgraphs/name/messari/ubeswap-celo',
+    #'ubeswap-celo':'https://api.thegraph.com/subgraphs/name/messari/ubeswap-celo',
     'sushiswap-ethereum':'https://api.thegraph.com/subgraphs/name/messari/sushiswap-ethereum',
     'sushiswap-celo':'https://api.thegraph.com/subgraphs/name/messari/sushiswap-celo',
     'sushiswap-moonriver':'https://api.thegraph.com/subgraphs/name/messari/sushiswap-moonriver',
@@ -279,7 +279,7 @@ def get_dex_pct_change_values(df):
                           'dailySwapCount', 'dailySwapCount_90d_pct_change', \
                           'totalPoolCount', 'totalPoolCount_90d_pct_change']]
     df = df.reset_index(drop=True)
-    df = df.drop([0, 2, 4, 6, 8, 10, 12])
+    df = df.drop([0, 2, 4, 6, 8, 10])
     df = df.rename(columns={'protocol_name':'Protocol', 'totalValueLockedUSD':'TVL', \
                        'totalValueLockedUSD_90d_pct_change':'TVL 90d % ∆', \
                        'dailyVolumeUSD':'Daily Volume USD', \
@@ -303,12 +303,128 @@ def get_dex_pct_change_values(df):
     return df
 
 
+
+###Yield Aggregators
+yield_aggregators_subgraphs = {
+    'arrakis-finance':'https://api.thegraph.com/subgraphs/name/messari/arrakis-finance-ethereum',
+    'convex-finance':'https://api.thegraph.com/subgraphs/name/messari/convex-finance-ethereum',
+    'badger-dao':'https://api.thegraph.com/subgraphs/name/messari/badgerdao-ethereum',
+    'gamma':'https://api.thegraph.com/subgraphs/name/messari/gamma-ethereum'
+}
+
+
+
+def get_yield_aggregator_data():
+    df_list = []
+    for i in yield_aggregators_subgraphs:
+        endpoint = sg.load_subgraph(yield_aggregators_subgraphs[i])
+        
+        financial_data = endpoint.Query.financialsDailySnapshots(first=90, orderBy=endpoint.FinancialsDailySnapshot.timestamp, orderDirection='desc')
+        financial_df = sg.query_df([
+            financial_data.timestamp,
+            financial_data.protocol.name,
+            financial_data.totalValueLockedUSD,
+            financial_data.dailySupplySideRevenueUSD,
+            financial_data.dailyProtocolSideRevenueUSD,
+            financial_data.dailyTotalRevenueUSD
+         ])
+        financial_df['financialsDailySnapshots_timestamp'] = financial_df['financialsDailySnapshots_timestamp'].apply(datetime.fromtimestamp).dt.strftime('%Y-%m-%d')
+        financial_df = financial_df.rename(columns={'financialsDailySnapshots_totalValueLockedUSD':'totalValueLockedUSD', \
+                                                    'financialsDailySnapshots_dailySupplySideRevenueUSD':'dailySupplySideRevenueUSD', \
+                                                   'financialsDailySnapshots_dailyProtocolSideRevenueUSD':'dailyProtocolSideRevenueUSD', \
+                                                   'financialsDailySnapshots_dailyTotalRevenueUSD':'dailyTotalRevenueUSD', \
+                                                   'financialsDailySnapshots_timestamp':'timestamp', \
+                                                   'financialsDailySnapshots_protocol_name':'protocol_name'})
+        financial_df['timestamp'] = pd.to_datetime(financial_df['timestamp'], format='%Y-%m-%d')
+        today = datetime.today().strftime('%Y-%m-%d')
+        financial_df = financial_df[financial_df['timestamp'] != today]
+
+
+        usage_data = endpoint.Query.usageMetricsDailySnapshots(first=90, orderBy=endpoint.UsageMetricsDailySnapshot.timestamp, orderDirection='desc')
+        usage_df = sg.query_df([
+            usage_data.timestamp,
+            usage_data.dailyActiveUsers,
+            usage_data.dailyTransactionCount
+        ])
+
+        usage_df['usageMetricsDailySnapshots_timestamp'] = usage_df['usageMetricsDailySnapshots_timestamp'].apply(datetime.fromtimestamp).dt.strftime('%Y-%m-%d')
+        usage_df = usage_df.rename(columns={'usageMetricsDailySnapshots_timestamp':'timestamp', \
+                                           'usageMetricsDailySnapshots_dailyActiveUsers':'dailyActiveUsers', \
+                                           'usageMetricsDailySnapshots_dailyTransactionCount':'dailyTransactionCount'
+                                           })
+        usage_df = usage_df[usage_df['timestamp'] != today]
+        usage_df['timestamp'] = pd.to_datetime(financial_df['timestamp'], format='%Y-%m-%d')
+
+        df = pd.merge(financial_df, usage_df, on='timestamp')
+        current_values = df.iloc[1]    
+        prev_90d_values = df.iloc[-1]
+        concat_df = pd.concat([prev_90d_values, current_values], axis=1)
+        concat_df = concat_df.transpose()
+        concat_df['timestamp'] = concat_df['timestamp'].dt.strftime('%Y-%m')
+        df_list.append(concat_df)
+        
+    df = pd.concat(df_list, axis=0).reset_index(drop=True)
+    df = df.groupby(['timestamp', 'protocol_name']).sum().reset_index()
+    df = df.sort_values(by=['protocol_name', 'timestamp']).reset_index(drop=True)
+    return df
+
+
+
+async def async_get_yield_aggregators_data():
+    return asyncio.to_thread(get_yield_aggregator_data)
+
+
+
+def get_yield_aggregators_pct_change_values(df):
+    df['totalValueLockedUSD_90d_pct_change'] = df['totalValueLockedUSD'].pct_change()
+    df['dailySupplySideRevenueUSD_90d_pct_change'] = df['dailySupplySideRevenueUSD'].pct_change()
+    df['dailyProtocolSideRevenueUSD_90d_pct_change'] = df['dailyProtocolSideRevenueUSD'].pct_change()
+    df['dailyTotalRevenueUSD_90d_pct_change'] = df['dailyTotalRevenueUSD'].pct_change()
+    df['dailyActiveUsers_90d_pct_change'] = df['dailyActiveUsers'].pct_change()
+    df['dailyTransactionCount_90d_pct_change'] = df['dailyTransactionCount'].pct_change()
+    df = df[['timestamp', 'protocol_name', 'totalValueLockedUSD', 'totalValueLockedUSD_90d_pct_change', \
+                          'dailySupplySideRevenueUSD', 'dailySupplySideRevenueUSD_90d_pct_change', \
+                          'dailyProtocolSideRevenueUSD', 'dailyProtocolSideRevenueUSD_90d_pct_change', \
+                          'dailyTotalRevenueUSD', 'dailyTotalRevenueUSD_90d_pct_change', \
+                          'dailyActiveUsers', 'dailyActiveUsers_90d_pct_change', \
+                          'dailyTransactionCount', 'dailyTransactionCount_90d_pct_change']]
+    df = df.reset_index(drop=True)
+    df = df.drop([0, 2, 4, 6])
+    df = df.rename(columns={'protocol_name':'Protocol', 'totalValueLockedUSD':'TVL', \
+                       'totalValueLockedUSD_90d_pct_change':'TVL 90d % ∆', \
+                       'dailySupplySideRevenueUSD':'Daily Supply Side Revenue USD', \
+                       'dailySupplySideRevenueUSD_90d_pct_change':'Daily Supply Side Revenue 90d % ∆', \
+                       'dailyProtocolSideRevenueUSD':'Daily Protocol Side Revenue USD', \
+                       'dailyProtocolSideRevenueUSD_90d_pct_change':'Daily Protocol Side Revenue 90d % ∆', \
+                       'dailyTotalRevenueUSD':'Daily Total Revenue USD', \
+                       'dailyTotalRevenueUSD_90d_pct_change':'Daily Total Revenue 90d % ∆', \
+                       'dailyActiveUsers':'Daily Active Users', \
+                       'dailyActiveUsers_90d_pct_change':'Daily Active Users 90d % ∆', \
+                       'dailyTransactionCount':'Daily Transaction Count', \
+                       'dailyTransactionCount_90d_pct_change':'Daily Transaction Count 90d % ∆'
+                       })
+    df = df.drop(['timestamp'], axis=1)
+    df = df.set_index('Protocol')
+    #df = df.reset_index(drop=True)
+    return df
+
+
+
+
+
+
+
+
+
+
+
 #main, run dex, and lending sector get_data() functions concurrently
 @cached(ttl=None, cache=Cache.MEMORY)
 async def main():
     result = await asyncio.gather(*[
         await async_get_lending_data(),
-        await async_get_dex_data()
+        await async_get_dex_data(),
+        await async_get_yield_aggregators_data()
     ])
 
     return result
@@ -317,9 +433,21 @@ variable = asyncio.run(main())
 
 df1 = variable[0] #lending
 df2 = variable[1] #dex
+df3 = variable[2] #yield aggregators
 
 lending_df = get_lending_pct_change_values(df1)
 dex_df = get_dex_pct_change_values(df2)
+yield_aggregator_df = get_yield_aggregators_pct_change_values(df3)
+
+
+
+
+
+
+
+
+
+
 
 
 #create cmaps for table
@@ -385,6 +513,33 @@ lending_df_styler = lending_df.style\
 
 
 
+#create style object
+yield_aggregator_df_styler = yield_aggregator_df.style\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[0]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[1]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[2]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[3]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[4]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[5]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[6]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[7]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[8]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[9]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[10]))\
+    .background_gradient(axis=0, cmap=cmap, subset=(yield_aggregator_df.index, yield_aggregator_df.columns[11]))\
+    .format({'TVL': '${0:,.0f}', 'TVL 90d % ∆':'{0:,.2%}', 'Daily Volume USD':'${0:,.0f}', \
+             'Daily Volume 90d % ∆':'{0:,.2%}', 'Daily Supply Side Revenue USD':'${0:,.0f}', \
+             'Daily Supply Side Revenue 90d % ∆':'{0:,.2%}', 'Daily Protocol Side Revenue USD':'${0:,.0f}', \
+             'Daily Protocol Side Revenue 90d % ∆':'{0:,.2%}', 'Daily Total Revenue USD':'${0:,.0f}', \
+             'Daily Total Revenue 90d % ∆':'{0:,.2%}', 'Daily Active Users':'{0:,.0f}', \
+             'Daily Active Users 90d % ∆':'{0:,.2%}', 'Daily Transaction Count':'{0:,.0f}', \
+             'Daily Transaction Count 90d % ∆':'{0:,.2%}', 'Daily Swap Count':'{0:,.0f}', \
+             'Daily Swap Count 90d % ∆':'{0:,.2%}', 'Total Pool Count':'{0:,.0f}', \
+             'Total Pool Count 90d % ∆':'{0:,.2%}'
+            })
+
+
+
 st.title('Sector Fundamentals Dashboard')
 st.write('\n \n This dashboard visualizes protocol fundamentals by sector, making it easy to compare competitors/peers. \n \
 (Data Source: Messari Subgraphs)\n \n')
@@ -392,8 +547,9 @@ st.write('\n \n This dashboard visualizes protocol fundamentals by sector, makin
 
 lending_df.index.name = 'Protocol'
 dex_df.index.name = 'Protocol'
+yield_aggregator_df.index.name = 'Protocol'
 
-options = ['Lending', "DEX's"]
+options = ['Lending', "DEX's", 'Yield Aggregators']
 sector = st.sidebar.selectbox(
     'Sector:',
     options,
@@ -433,6 +589,19 @@ elif sector == "DEX's":
     #display df and bar chart
     st.write(fig)
 
+elif sector == 'Yield Aggregators':
+    st.subheader('Yield Aggregation Protocols:')
+    st.write(yield_aggregator_df_styler)
+    chart_data = ["TVL", "TVL 90d % ∆", "Daily Supply Side Revenue USD", "Daily Supply Side Revenue 90d % ∆", "Daily Protocol Side Revenue USD", \
+    "Daily Protocol Side Revenue 90d % ∆", "Daily Total Revenue USD", "Daily Total Revenue 90d % ∆", "Daily Active Users", \
+    "Daily Active Users 90d % ∆", "Daily Transaction Count", "Daily Transaction Count 90d % ∆"]
+    select_y = st.selectbox('Chart:', chart_data)
+
+    #chart object
+    fig = px.bar(yield_aggregator_df, y=select_y, x=yield_aggregator_df.index)
+
+    #display df and bar chart
+    st.write(fig)
 
 
 
