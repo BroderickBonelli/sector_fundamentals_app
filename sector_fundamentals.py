@@ -369,15 +369,18 @@ def get_yield_aggregator_data():
 
         df = pd.merge(financial_df, usage_df, on='timestamp')
         current_values = df.iloc[1]    
+        current_values['order'] = 1
         prev_90d_values = df.iloc[-1]
+        prev_90d_values['order'] = 0
         concat_df = pd.concat([prev_90d_values, current_values], axis=1)
         concat_df = concat_df.transpose()
         concat_df['timestamp'] = concat_df['timestamp'].dt.strftime('%Y-%m')
         df_list.append(concat_df)
         
     df = pd.concat(df_list, axis=0).reset_index(drop=True)
-    df = df.groupby(['timestamp', 'protocol_name']).sum().reset_index()
-    df = df.sort_values(by=['protocol_name', 'timestamp']).reset_index(drop=True)
+    df = df.groupby(['order', 'protocol_name']).sum().reset_index()
+    df = df.drop(['timestamp'], axis=1)
+    df = df.sort_values(by=['protocol_name', 'order']).reset_index(drop=True)
     return df
 
 
@@ -394,7 +397,7 @@ def get_yield_aggregators_pct_change_values(df):
     df['dailyTotalRevenueUSD_90d_pct_change'] = df['dailyTotalRevenueUSD'].pct_change()
     df['dailyActiveUsers_90d_pct_change'] = df['dailyActiveUsers'].pct_change()
     df['dailyTransactionCount_90d_pct_change'] = df['dailyTransactionCount'].pct_change()
-    df = df[['timestamp', 'protocol_name', 'totalValueLockedUSD', 'totalValueLockedUSD_90d_pct_change', \
+    df = df[['protocol_name', 'totalValueLockedUSD', 'totalValueLockedUSD_90d_pct_change', \
                           'dailySupplySideRevenueUSD', 'dailySupplySideRevenueUSD_90d_pct_change', \
                           'dailyProtocolSideRevenueUSD', 'dailyProtocolSideRevenueUSD_90d_pct_change', \
                           'dailyTotalRevenueUSD', 'dailyTotalRevenueUSD_90d_pct_change', \
@@ -415,7 +418,7 @@ def get_yield_aggregators_pct_change_values(df):
                        'dailyTransactionCount':'Daily Transaction Count', \
                        'dailyTransactionCount_90d_pct_change':'Daily Transaction Count 90d % ∆'
                        })
-    df = df.drop(['timestamp'], axis=1)
+    #df = df.drop(['timestamp'], axis=1)
     df = df.set_index('Protocol')
     #df = df.reset_index(drop=True)
     return df
