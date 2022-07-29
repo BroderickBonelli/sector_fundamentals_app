@@ -24,6 +24,7 @@ refresh = st_autorefresh(interval=86400, limit=1)
 sg = Subgrounds()
 
 
+
 #provide lending sector subgraph links
 lending_subgraphs = {'benqi':'https://api.thegraph.com/subgraphs/name/messari/benqi-avalanche', \
                  'compound':'https://api.thegraph.com/subgraphs/name/messari/compound-ethereum', \
@@ -111,18 +112,22 @@ def get_lending_data():
 
         df = pd.merge(financial_df, usage_df, on='timestamp')
         current_values = df.iloc[1]    
+        current_values['order'] = 1
         prev_90d_values = df.iloc[-1]
+        prev_90d_values['order'] = 0
         concat_df = pd.concat([prev_90d_values, current_values], axis=1)
         concat_df = concat_df.transpose()
         concat_df['timestamp'] = concat_df['timestamp'].dt.strftime('%Y-%m')
         df_list.append(concat_df)
-        
+    
     df = pd.concat(df_list, axis=0).reset_index(drop=True)
     df['protocol_name'] = df['protocol_name'].str.replace(' v2', '')
     df['protocol_name'] = df['protocol_name'].str.replace(' V3 Extended', '')
     df['protocol_name'] = df['protocol_name'].str.replace(' V3', '')
-    df = df.groupby(['timestamp', 'protocol_name']).sum().reset_index()
-    df = df.sort_values(by=['protocol_name', 'timestamp']).reset_index(drop=True)
+    df = df.groupby(['order', 'protocol_name']).sum().reset_index()
+    df = df.drop(['timestamp'], axis=1)
+    df = df.sort_values(by=['protocol_name', 'order']).reset_index(drop=True)
+
     return df
 
 async def async_get_lending_data():
@@ -138,7 +143,7 @@ def get_lending_pct_change_values(df):
     df['totalDepositBalanceUSD_90d_pct_change'] = df['totalDepositBalanceUSD'].pct_change()
     df['dailyActiveUsers_90d_pct_change'] = df['dailyActiveUsers'].pct_change()
     df['dailyTransactionCount_90d_pct_change'] = df['dailyTransactionCount'].pct_change()
-    df = df[['timestamp', 'protocol_name', 'totalValueLockedUSD', 'totalValueLockedUSD_90d_pct_change', \
+    df = df[['protocol_name', 'totalValueLockedUSD', 'totalValueLockedUSD_90d_pct_change', \
                           'dailyTotalRevenueUSD', 'dailyTotalRevenueUSD_90d_pct_change', \
                           'totalBorrowBalanceUSD', 'totalBorrowBalanceUSD_90d_pct_change', \
                           'totalDepositBalanceUSD', 'totalDepositBalanceUSD_90d_pct_change', \
@@ -150,7 +155,7 @@ def get_lending_pct_change_values(df):
     df = df.rename(columns={'protocol_name':'Protocol', 'totalValueLockedUSD':'TVL', \
                        'totalValueLockedUSD_90d_pct_change':'TVL 90d % ∆', \
                        'dailyTotalRevenueUSD':'Daily Total Revenue USD', \
-                       'dailyTotalRevenueUSD_90d_pct_change':'Daily Total Revenue 90d % ∆', \
+                       'dailyTotalRevenueUSD_90d_pct_change':'Daily Total Revenues 90d % ∆', \
                        'totalBorrowBalanceUSD':'Total Borrow Balance USD', \
                        'totalBorrowBalanceUSD_90d_pct_change':'Total Borrow Balance 90d % ∆', \
                        'totalDepositBalanceUSD':'Total Deposit Balance USD', \
@@ -161,8 +166,10 @@ def get_lending_pct_change_values(df):
                        'dailyTransactionCount':'Daily Transaction Count', \
                        'dailyTransactionCount_90d_pct_change':'Daily Transaction Count 90d % ∆'})
     df['Collateral Ratio'] = df['Total Deposit Balance USD'] / df['Total Borrow Balance USD']
-    df = df.drop(['timestamp'], axis=1)
+#     df = df.drop(['timestamp'], axis=1)
     df = df.set_index('Protocol')
+    #df = df.reset_index(drop=True)
+    return df
     return df
 
 
@@ -240,16 +247,20 @@ def get_dex_data():
         usage_df['timestamp'] = pd.to_datetime(financial_df['timestamp'], format='%Y-%m-%d')
 
         df = pd.merge(financial_df, usage_df, on='timestamp')
-        current_values = df.iloc[1]    
+        current_values = df.iloc[1] 
+        current_values['order'] = 1
         prev_90d_values = df.iloc[-1]
+        prev_90d_values['order'] = 0
         concat_df = pd.concat([prev_90d_values, current_values], axis=1)
         concat_df = concat_df.transpose()
         concat_df['timestamp'] = concat_df['timestamp'].dt.strftime('%Y-%m')
+        print(concat_df)
         df_list.append(concat_df)
         
     df = pd.concat(df_list, axis=0).reset_index(drop=True)
-    df = df.groupby(['timestamp', 'protocol_name']).sum().reset_index()
-    df = df.sort_values(by=['protocol_name', 'timestamp']).reset_index(drop=True)
+    df = df.groupby(['order', 'protocol_name']).sum().reset_index()
+    df = df.drop(['timestamp'], axis=1)
+    df = df.sort_values(by=['protocol_name', 'order']).reset_index(drop=True)
     return df
 
 
@@ -269,7 +280,7 @@ def get_dex_pct_change_values(df):
     df['dailyTransactionCount_90d_pct_change'] = df['dailyTransactionCount'].pct_change()
     df['dailySwapCount_90d_pct_change'] = df['dailySwapCount'].pct_change()
     df['totalPoolCount_90d_pct_change'] = df['totalPoolCount'].pct_change()
-    df = df[['timestamp', 'protocol_name', 'totalValueLockedUSD', 'totalValueLockedUSD_90d_pct_change', \
+    df = df[['protocol_name', 'totalValueLockedUSD', 'totalValueLockedUSD_90d_pct_change', \
                           'dailyVolumeUSD', 'dailyVolumeUSD_90d_pct_change', \
                           'dailySupplySideRevenueUSD', 'dailySupplySideRevenueUSD_90d_pct_change', \
                           'dailyProtocolSideRevenueUSD', 'dailyProtocolSideRevenueUSD_90d_pct_change', \
@@ -298,8 +309,9 @@ def get_dex_pct_change_values(df):
                        'dailySwapCount_90d_pct_change':'Daily Swap Count 90d % ∆', \
                        'totalPoolCount':'Total Pool Count', \
                        'totalPoolCount_90d_pct_change':'Total Pool Count 90d % ∆'})
-    df = df.drop(['timestamp'], axis=1)
+    #df = df.drop(['timestamp'], axis=1)
     df = df.set_index('Protocol')
+    #df = df.reset_index(drop=True)
     return df
 
 
@@ -602,7 +614,6 @@ elif sector == 'Yield Aggregators':
 
     #display df and bar chart
     st.write(fig)
-
 
 
 
